@@ -26,7 +26,7 @@ except LookupError:
     nltk.download('punkt')
 
 # Set your OpenRouter API Key (don't prompt user)
-OPENROUTER_API_KEY = "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"  # Replace with environment variable in production
+OPENROUTER_API_KEY = "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"  # Replace with environment variable in production
 
 # Add this to your imports
 from serpapi import GoogleSearch
