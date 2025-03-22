@@ -26,7 +26,7 @@ except LookupError:
     nltk.download('punkt')
 
 # Set your OpenRouter API Key (don't prompt user)
-OPENROUTER_API_KEY = "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"  # Replace with environment variable in production
+OPENROUTER_API_KEY = "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"  # Replace with environment variable in production
 
 # Add this to your imports
 from serpapi import GoogleSearch
@@ -147,36 +147,46 @@ def analyze_keyword_structured(keyword, search_results):
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        print('STATUS CODE',response.status_code)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        print('STATUS CODE', response.status_code)
+        print('RESPONSE HEADERS:', response.headers)
         
         if response.status_code == 200:
-            content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "{}")
-            
-            # Try to parse the JSON response
             try:
-                result = json.loads(content)
-                return result
-            except json.JSONDecodeError:
-                # If not valid JSON, extract the JSON part using regex
-                json_match = re.search(r'({[\s\S]*})', content)
-                if json_match:
-                    try:
-                        return json.loads(json_match.group(1))
-                    except:
-                        pass
-                return {
-                    "trending": ["Could not parse structured data"],
-                    "positive_aspects": [],
-                    "negative_aspects": [],
-                    "current_topics": [],
-                    "key_metrics": {},
-                    "sentiment_score": 0,
-                    "summary": content[:500]
-                }
-        
-        st.error(f"API Error: {response.status_code}")
-        return None
+                # First try the proper API response format
+                content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "{}")
+                print('RAW CONTENT:', content[:500])
+                
+                # Try to parse the JSON response
+                try:
+                    # Clean the content in case there's any markdown formatting
+                    cleaned_content = re.sub(r'^```json\s*|\s*```$', '', content.strip())
+                    result = json.loads(cleaned_content)
+                    return result
+                except json.JSONDecodeError as e:
+                    print(f"JSON parse error: {e}")
+                    # If not valid JSON, extract the JSON part using regex
+                    json_match = re.search(r'({[\s\S]*})', content)
+                    if json_match:
+                        try:
+                            extracted_json = json_match.group(1)
+                            print(f"Extracted JSON: {extracted_json[:200]}")
+                            return json.loads(extracted_json)
+                        except Exception as e:
+                            print(f"Extraction failed: {e}")
+                    
+                    # If all parsing attempts fail, create a default response with the content
+                    return {
+                        "trending": ["No clear trends identified"],
+                        "positive_aspects": ["Unable to extract positive aspects"],
+                        "negative_aspects": ["Unable to extract negative aspects"],
+                        "current_topics": ["Unable to extract current topics"],
+                        "key_metrics": {},
+                        "sentiment_score": 0,
+                        "summary": f"Analysis failed to parse. Raw content: {content[:300]}"
+                    }
+            except Exception as e:
+                print(f"Response processing error: {e}")
     except Exception as e:
         st.error(f"Analysis error: {e}")
         return None
