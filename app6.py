@@ -85,7 +85,7 @@ def fallback_search(query, max_results=200):
         
         for search_url in search_urls:
             try:
-                response = requests.get(search_url, headers=headers, timeout=15)
+                response = requests.get(search_url, headers=headers, timeout=30)
                 
                 if response.status_code == 200:
                     # Simple regex-based extraction
@@ -453,7 +453,7 @@ def analyze_sentiment(search_results):
 def get_trend_data(keyword, timeframe='now 7-d'):
     url = f"https://en.wikipedia.org/wiki/{keyword.replace(' ', '_')}"
     logging.debug(url)
-    response = requests.get(url)
+    response = requests.get(url,timeout=30)
     logging.debug('RESPONSE',response.status_code)
     
     if response.status_code != 200:
