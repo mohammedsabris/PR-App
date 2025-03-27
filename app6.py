@@ -309,9 +309,12 @@ def analyze_keyword_structured(keyword, search_results):
 def scrape_reviews(keyword, search_results, max_reviews=20):
     all_reviews = []
     
+    search_results = cached_search(f'reviews for {keyword}')
     # First, try to get review pages from the search results
     review_pages = [result for result in search_results 
                    if 'review' in result['title'].lower() or 'review' in result['body'].lower()]
+    
+    print('REVIEW PAGES',review_pages)
     
     # If we have potential review pages, try to extract reviews from them
     for page in review_pages[:3]:  # Limit to 3 pages to avoid too many requests
@@ -450,77 +453,77 @@ def analyze_sentiment(search_results):
     logging.debug(pd.DataFrame(sentiments))
     return pd.DataFrame(sentiments)
 
-def get_trend_data(keyword, timeframe='now 7-d'):
-    url = f"https://en.wikipedia.org/wiki/{keyword.replace(' ', '_')}"
-    logging.debug(url)
-    response = requests.get(url,timeout=30)
-    logging.debug('RESPONSE',response.status_code)
+# def get_trend_data(keyword, timeframe='now 7-d'):
+#     url = f"https://en.wikipedia.org/wiki/{keyword.replace(' ', '_')}"
+#     logging.debug(url)
+#     response = requests.get(url,timeout=30)
+#     logging.debug('RESPONSE',response.status_code)
     
-    if response.status_code != 200:
-        return None
+#     if response.status_code != 200:
+#         return None
     
-    soup = BeautifulSoup(response.text, 'html.parser')
+#     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # Find the page views section (this is a hypothetical example)
-    # You may need to adjust the selectors based on the actual HTML structure
-    views_data = []
-    for row in soup.find_all('tr'):
-        cells = row.find_all('td')
-        if len(cells) > 1:
-            date = cells[0].get_text(strip=True)
-            views = cells[1].get_text(strip=True)
-            views_data.append((date, int(views.replace(',', ''))))  # Convert views to integer
+#     # Find the page views section (this is a hypothetical example)
+#     # You may need to adjust the selectors based on the actual HTML structure
+#     views_data = []
+#     for row in soup.find_all('tr'):
+#         cells = row.find_all('td')
+#         if len(cells) > 1:
+#             date = cells[0].get_text(strip=True)
+#             views = cells[1].get_text(strip=True)
+#             views_data.append((date, int(views.replace(',', ''))))  # Convert views to integer
     
-    return pd.DataFrame(views_data, columns=['Date', 'Views'])
+#     return pd.DataFrame(views_data, columns=['Date', 'Views'])
 
 # # Test with a common keyword
 # data = get_trend_data('python')
 
 # Updated chart creation function with robust error handling
-def create_trend_chart(keyword, search_results=None):
-    try:
-        # Get actual trend data
-        trend_df = get_trend_data(keyword, timeframe='now 4-H')  # Last 4 hours
+# def create_trend_chart(keyword, search_results=None):
+#     try:
+#         # Get actual trend data
+#         trend_df = get_trend_data(keyword, timeframe='now 4-H')  # Last 4 hours
     
-        if trend_df.empty or len(trend_df) < 2:
-            return None, "No real-time interest data available for this keyword"
+#         if trend_df.empty or len(trend_df) < 2:
+#             return None, "No real-time interest data available for this keyword"
         
-        # Create the chart with Plotly
-        fig = px.line(trend_df, x='date', y='views', 
-                    title=f'Real-time interest in "{keyword}"')
+#         # Create the chart with Plotly
+#         fig = px.line(trend_df, x='date', y='views', 
+#                     title=f'Real-time interest in "{keyword}"')
         
-        # Add interactive features
-        fig.update_layout(
-            xaxis_title='date', 
-            yaxis_title='views',
-            hovermode='x unified',
-            updatemenus=[{
-                'buttons': [
-                    {'args': [{'visible': [True, False, False]}, 
-                            {'title': f'Real-time interest in "{keyword}"'}],
-                    'label': '4 Hours',
-                    'method': 'update'},
-                    {'args': [{'visible': [False, True, False]}, 
-                            {'title': f'Real-time interest in "{keyword}"'}],
-                    'label': '24 Hours',
-                    'method': 'update'},
-                    {'args': [{'visible': [False, False, True]}, 
-                            {'title': f'Real-time interest in "{keyword}"'}],
-                    'label': '7 Days',
-                    'method': 'update'}
-                ],
-                'direction': 'down',
-                'showactive': True,
-                'x': 0.1,
-                'y': 1.15
-            }]
-        )
+#         # Add interactive features
+#         fig.update_layout(
+#             xaxis_title='date', 
+#             yaxis_title='views',
+#             hovermode='x unified',
+#             updatemenus=[{
+#                 'buttons': [
+#                     {'args': [{'visible': [True, False, False]}, 
+#                             {'title': f'Real-time interest in "{keyword}"'}],
+#                     'label': '4 Hours',
+#                     'method': 'update'},
+#                     {'args': [{'visible': [False, True, False]}, 
+#                             {'title': f'Real-time interest in "{keyword}"'}],
+#                     'label': '24 Hours',
+#                     'method': 'update'},
+#                     {'args': [{'visible': [False, False, True]}, 
+#                             {'title': f'Real-time interest in "{keyword}"'}],
+#                     'label': '7 Days',
+#                     'method': 'update'}
+#                 ],
+#                 'direction': 'down',
+#                 'showactive': True,
+#                 'x': 0.1,
+#                 'y': 1.15
+#             }]
+#         )
         
-        return fig, None
-    except Exception as e:
-        logging.debug(f"Error creating trend chart: {e}")
-        # Return a None chart and a message
-        return None, "Unable to display interest data for this keyword"
+#         return fig, None
+#     except Exception as e:
+#         logging.debug(f"Error creating trend chart: {e}")
+#         # Return a None chart and a message
+#         return None, "Unable to display interest data for this keyword"
 
 # Function to create a sentiment distribution chart
 def create_sentiment_chart(sentiment_df):
@@ -622,13 +625,13 @@ if search_button and keyword:
             progress_bar.progress(50)
             
             # Perform AI analysis
-            progress_text.text("Analyzing content with AI...")
+            progress_text.text("Analyzing Content")
             analysis = cached_analysis(keyword, search_results)
             progress_bar.progress(75)
             
             # Generate visualizations
             progress_text.text("Creating visualizations...")
-            trend_chart, trend_message = create_trend_chart(keyword)
+            # trend_chart, trend_message = create_trend_chart(keyword)
             
             progress_bar.progress(100)
             progress_text.text("Analysis complete!")
@@ -650,7 +653,7 @@ if search_button and keyword:
             tab1, tab2, tab3, tab4= st.tabs(["📈 Trends & Topics", "😊 Sentiment","Reviews","🔍 Scraped Data"])
             
             with tab1:
-                col1, col2 = st.columns(2)
+                col1, col2 = st.columns([2,1])
                 
                 with col1:
                     # Trending topics
@@ -669,12 +672,12 @@ if search_button and keyword:
                     else:
                         st.info("No current discussions found for this keyword.")
                 
-                with col2:
-                    # Trend chart
-                    if trend_chart:
-                        st.plotly_chart(trend_chart, use_container_width=True)
-                    elif trend_message:
-                        st.info(trend_message)       
+                # with col2:
+                #     # Trend chart
+                #     if trend_chart:
+                #         st.plotly_chart(trend_chart, use_container_width=True)
+                #     elif trend_message:
+                #         st.info(trend_message)       
             with tab2:
                 col1, col2,col3 = st.columns([1,2,1])
                 
@@ -700,14 +703,15 @@ if search_button and keyword:
                 
                 try:
                     with st.spinner("Scraping and analyzing reviews..."):
-                        reviews = scrape_reviews(keyword, search_results)
+                        reviews = scrape_reviews(f'reviews for {keyword}', search_results)
                         
                         if reviews and len(reviews) > 0:
                             st.write(f"Found {len(reviews)} reviews related to '{keyword}'")
                             st.subheader("Review Samples")
                             if len(reviews) > 0:
                                 for i, review in enumerate(reviews[:10]):  # Limit to 10 displayed reviews
-                                    with st.expander(f"Review {i+1} ({review['category']})"):
+                                    with st.expander(f"Review {i+1}"):
+                                    # with st.expander(f"Review {i+1} ({review['category']})"):
                                         st.write(review['text'])
                                         st.caption(f"Source: {review['source']}")
                             else:
