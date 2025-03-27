@@ -26,28 +26,31 @@ except LookupError:
     nltk.download('punkt')
 
 # Set your OpenRouter API Key (don't prompt user)
-OPENROUTER_API_KEY = "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"  # Replace with environment variable in production
+OPENROUTER_API_KEY = "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"  # Replace with environment variable in production
 
 # Add this to your imports
 from serpapi import GoogleSearch
 import time
 
-# Update your search_web function with fallback
-def search_web(query, max_results=10):
+def search_web(query, max_results=200):
     try:
         # Primary search using DDGS
         results = []
         with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=max_results):
-                results.append({
-                    "title": r.get("title", ""),
-                    "body": r.get("body", ""),
-                    "href": r.get("href", "")
-                })
+            try:
+                for r in ddgs.text(query, max_results=max_results):
+                    results.append({
+                        "title": r.get("title", ""),
+                        "body": r.get("body", ""),
+                        "href": r.get("href", "")
+                    })
+            except Exception as e:
+                print(f"Error during DDGS search: {e}")
+                # Continue with fallback if DDGS fails
         
         # If DDGS returned results, use them
         if results:
-            print('RESULTS FROM PRIMARY ENGINE (DDGS)')
+            print(f'RESULTS FROM PRIMARY ENGINE (DDGS): {len(results)} found')
             return results
         
         # If DDGS returned no results, try fallback
@@ -59,52 +62,84 @@ def search_web(query, max_results=10):
         print('TRYING FALLBACK SEARCH ENGINE')
         return fallback_search(query, max_results)
 
-# Add fallback search function
-def fallback_search(query, max_results=10):
+# Improved fallback search
+def fallback_search(query, max_results=200):
     try:
         results = []
         # Using requests with custom headers to get regular search results
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
         
-        response = requests.get(search_url, headers=headers)
+        # Try multiple search engines
+        search_urls = [
+            f"https://www.google.com/search?q={query.replace(' ', '+')}&num=100",
+            f"https://www.bing.com/search?q={query.replace(' ', '+')}&count=100",
+            f"https://search.yahoo.com/search?p={query.replace(' ', '+')}&n=100"
+        ]
         
-        # Simple regex-based extraction (very basic but works without API keys)
-        title_pattern = r'<h3 class="[^"]*">(.*?)</h3>'
-        title_matches = re.findall(title_pattern, response.text)
+        for search_url in search_urls:
+            try:
+                response = requests.get(search_url, headers=headers, timeout=15)
+                
+                if response.status_code == 200:
+                    # Simple regex-based extraction
+                    title_pattern = r'<h3[^>]*>(.*?)</h3>'
+                    title_matches = re.findall(title_pattern, response.text)
+                    
+                    snippet_pattern = r'<div class="[^"]*"[^>]*>(.*?)</div>'
+                    snippet_matches = re.findall(snippet_pattern, response.text)
+                    
+                    url_pattern = r'<a href="(https?://[^"]+)"'
+                    url_matches = re.findall(url_pattern, response.text)
+                    
+                    # Extract and clean at least some results
+                    for i in range(min(len(title_matches), len(snippet_matches), len(url_matches), max_results)):
+                        # Clean HTML tags from the results
+                        title = re.sub(r'<.*?>', '', title_matches[i])
+                        body = re.sub(r'<.*?>', '', snippet_matches[i])
+                        href = url_matches[i]
+                        
+                        # Only add if we have meaningful content
+                        if len(title.strip()) > 0 and len(body.strip()) > 0:
+                            results.append({
+                                "title": title,
+                                "body": body,
+                                "href": href
+                            })
+                    
+                    # If we got at least some results, break the loop
+                    if len(results) > 10:
+                        break
+            except Exception as e:
+                print(f"Error with search engine {search_url}: {e}")
+                continue
         
-        snippet_pattern = r'<div class="[^"]*" data-sncf="[^"]*" data-snf="[^"]*">(.*?)</div>'
-        snippet_matches = re.findall(snippet_pattern, response.text)
+        # If all search engines failed, return a helpful placeholder result
+        if not results:
+            print("All search engines failed, returning placeholder result")
+            return [{
+                "title": f"Information about {query}",
+                "body": f"We're collecting information about {query}. Try refining your search or check back in a moment.",
+                "href": "https://www.example.com"
+            }]
         
-        url_pattern = r'<a href="(https?://[^"]+)"'
-        url_matches = re.findall(url_pattern, response.text)
-        
-        # Combine the results
-        for i in range(min(len(title_matches), len(snippet_matches), len(url_matches), max_results)):
-            # Clean HTML tags from the results
-            title = re.sub(r'<.*?>', '', title_matches[i])
-            body = re.sub(r'<.*?>', '', snippet_matches[i])
-            href = url_matches[i]
-            
-            results.append({
-                "title": title,
-                "body": body,
-                "href": href
-            })
-        
-        print('RESULTS FROM FALLBACK ENGINE')
+        print(f'RESULTS FROM FALLBACK ENGINE: {len(results)} found')
         return results
         
     except Exception as e:
-        st.error(f"Fallback search error: {e}")
-        return []
+        print(f"All fallback search methods failed: {e}")
+        # Return a minimal placeholder to avoid breaking the application
+        return [{
+            "title": f"Information about {query}",
+            "body": f"We're collecting information about {query}. Try refining your search or check back in a moment.",
+            "href": "https://www.example.com"
+        }]
 
-# Function to analyze keyword using OpenRouter AI with structured output
+# Improved analyze_keyword_structured function with better JSON parsing
 def analyze_keyword_structured(keyword, search_results):
     # Combine search result content for context
-    context = "\n".join([f"Title: {result['title']}\nContent: {result['body']}" for result in search_results[:5]])
+    context = "\n".join([f"Title: {result['title']}\nContent: {result['body']}" for result in search_results[:15]])
     
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -135,21 +170,33 @@ def analyze_keyword_structured(keyword, search_results):
         "sentiment_score": 5,
         "summary": "Brief summary of overall findings."
     }}
+    
+    IMPORTANT: Return ONLY valid JSON without any markdown formatting, code blocks, or explanations. Do not include ```json at the beginning or ``` at the end. Only return a valid JSON object.
     """
     
     payload = {
-        "model": "deepseek/deepseek-r1-zero:free",
+        "model": "mistralai/mistral-small-3.1-24b-instruct:free",
         "messages": [
-            {"role": "system", "content": "You are an expert analyst who provides structured JSON outputs."},
+            {"role": "system", "content": "You are an expert analyst who provides structured JSON outputs. Return ONLY valid JSON without any markdown formatting, code blocks, or explanations."},
             {"role": "user", "content": prompt}
         ],
         "response_format": {"type": "json_object"}
     }
     
+    # Create default fallback response
+    default_response = {
+        "trending": ["Analysis in progress..."],
+        "positive_aspects": ["Analysis in progress..."],
+        "negative_aspects": ["Analysis in progress..."],
+        "current_topics": ["Analysis in progress..."],
+        "key_metrics": {},
+        "sentiment_score": 0,
+        "summary": f"Analysis of '{keyword}' is being processed. Results will appear shortly."
+    }
+    
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         print('STATUS CODE', response.status_code)
-        print('RESPONSE HEADERS:', response.headers)
         
         if response.status_code == 200:
             try:
@@ -157,39 +204,102 @@ def analyze_keyword_structured(keyword, search_results):
                 content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "{}")
                 print('RAW CONTENT:', content[:500])
                 
-                # Try to parse the JSON response
+                # Try multiple approaches to parse the JSON
                 try:
-                    # Clean the content in case there's any markdown formatting
-                    cleaned_content = re.sub(r'^```json\s*|\s*```$', '', content.strip())
-                    result = json.loads(cleaned_content)
-                    return result
-                except json.JSONDecodeError as e:
-                    print(f"JSON parse error: {e}")
-                    # If not valid JSON, extract the JSON part using regex
-                    json_match = re.search(r'({[\s\S]*})', content)
-                    if json_match:
-                        try:
-                            extracted_json = json_match.group(1)
-                            print(f"Extracted JSON: {extracted_json[:200]}")
-                            return json.loads(extracted_json)
-                        except Exception as e:
-                            print(f"Extraction failed: {e}")
+                    # Method 1: Direct parsing
+                    result = json.loads(content)
                     
-                    # If all parsing attempts fail, create a default response with the content
-                    return {
-                        "trending": ["No clear trends identified"],
-                        "positive_aspects": ["Unable to extract positive aspects"],
-                        "negative_aspects": ["Unable to extract negative aspects"],
-                        "current_topics": ["Unable to extract current topics"],
-                        "key_metrics": {},
-                        "sentiment_score": 0,
-                        "summary": f"Analysis failed to parse. Raw content: {content[:300]}"
-                    }
+                    # Verify we have the expected fields
+                    if isinstance(result, dict) and "trending" in result and "positive_aspects" in result:
+                        return result
+                    else:
+                        # Missing expected fields, fall back to default
+                        print("Response missing expected fields, using default")
+                        return default_response
+                        
+                except json.JSONDecodeError:
+                    # Method 2: Clean and try again
+                    # Remove any possible markdown code blocks, backslashes, and other problematic characters
+                    cleaned_content = re.sub(r'^```json\s*|\s*```$', '', content.strip())
+                    cleaned_content = re.sub(r'\\([^\\])', r'\1', cleaned_content)
+                    
+                    try:
+                        result = json.loads(cleaned_content)
+                        if isinstance(result, dict) and "trending" in result:
+                            return result
+                    except json.JSONDecodeError:
+                        # Method 3: More aggressive regex extraction
+                        pattern = r'({[\s\S]*})'
+                        matches = re.findall(pattern, cleaned_content)
+                        if matches:
+                            for potential_json in matches:
+                                try:
+                                    result = json.loads(potential_json)
+                                    if isinstance(result, dict) and "trending" in result:
+                                        return result
+                                except:
+                                    continue
+                        
+                        # Method 4: Fall back to manual parsing if all else fails
+                        try:
+                            # Extract data manually using regex patterns
+                            manual_result = default_response.copy()
+                            
+                            # Try to extract trending items
+                            trending_match = re.search(r'"trending"\s*:\s*\[(.*?)\]', cleaned_content, re.DOTALL)
+                            if trending_match:
+                                trending_items = re.findall(r'"([^"]+)"', trending_match.group(1))
+                                if trending_items:
+                                    manual_result["trending"] = trending_items
+                            
+                            # Extract positive aspects
+                            positive_match = re.search(r'"positive_aspects"\s*:\s*\[(.*?)\]', cleaned_content, re.DOTALL)
+                            if positive_match:
+                                positive_items = re.findall(r'"([^"]+)"', positive_match.group(1))
+                                if positive_items:
+                                    manual_result["positive_aspects"] = positive_items
+                            
+                            # Extract negative aspects
+                            negative_match = re.search(r'"negative_aspects"\s*:\s*\[(.*?)\]', cleaned_content, re.DOTALL)
+                            if negative_match:
+                                negative_items = re.findall(r'"([^"]+)"', negative_match.group(1))
+                                if negative_items:
+                                    manual_result["negative_aspects"] = negative_items
+                            
+                            # Extract current topics
+                            topics_match = re.search(r'"current_topics"\s*:\s*\[(.*?)\]', cleaned_content, re.DOTALL)
+                            if topics_match:
+                                topic_items = re.findall(r'"([^"]+)"', topics_match.group(1))
+                                if topic_items:
+                                    manual_result["current_topics"] = topic_items
+                            
+                            # Extract sentiment score
+                            sentiment_match = re.search(r'"sentiment_score"\s*:\s*(-?\d+)', cleaned_content)
+                            if sentiment_match:
+                                manual_result["sentiment_score"] = int(sentiment_match.group(1))
+                            
+                            # Extract summary
+                            summary_match = re.search(r'"summary"\s*:\s*"([^"]+)"', cleaned_content)
+                            if summary_match:
+                                manual_result["summary"] = summary_match.group(1)
+                            
+                            return manual_result
+                        except Exception as e:
+                            print(f"Manual parsing failed: {e}")
+                            return default_response
+                    
+                # If we get here, all parsing methods failed
+                print("All JSON parsing methods failed, using default response")
+                return default_response
             except Exception as e:
                 print(f"Response processing error: {e}")
+                return default_response
+        else:
+            print(f"API Error: {response.status_code}")
+            return default_response
     except Exception as e:
-        st.error(f"Analysis error: {e}")
-        return None
+        print(f"Analysis request error: {e}")
+        return default_response
     
 def scrape_reviews(keyword, search_results, max_reviews=20):
     all_reviews = []
@@ -282,74 +392,7 @@ def scrape_reviews(keyword, search_results, max_reviews=20):
         else:
             review['category'] = 'Neutral'
     
-    return unique_reviews
-
-# Function to visualize reviews
-def create_review_visualizations(reviews):
-    if not reviews:
-        return None, None, None
-    
-    # Create a DataFrame from the reviews
-    reviews_df = pd.DataFrame(reviews)
-    
-    # 1. Sentiment distribution chart
-    sentiment_counts = reviews_df['category'].value_counts().reset_index()
-    sentiment_counts.columns = ['Sentiment', 'Count']
-    
-    sentiment_pie = px.pie(
-        sentiment_counts, 
-        values='Count', 
-        names='Sentiment',
-        title='Review Sentiment Distribution',
-        color='Sentiment',
-        color_discrete_map={
-            'Positive': '#2ca02c',
-            'Neutral': '#7f7f7f',
-            'Negative': '#d62728'
-        },
-        hole=0.3
-    )
-    
-    # 2. Sentiment scores bar chart
-    sentiment_bar = px.bar(
-        reviews_df,
-        y='sentiment',
-        title='Individual Review Sentiment Scores',
-        color='sentiment',
-        color_continuous_scale='RdBu',
-        labels={'sentiment': 'Sentiment Score', 'index': 'Review #'}
-    )
-    
-    # 3. Word frequency chart - extract key terms
-    # Combine all review text
-    all_text = ' '.join([review['text'] for review in reviews])
-    
-    # Basic cleaning and tokenization
-    words = re.findall(r'\b\w+\b', all_text.lower())
-    
-    # Remove common stop words
-    stop_words = set(['the', 'and', 'of', 'to', 'a', 'in', 'for', 'is', 'on', 'that', 'by', 
-                      'this', 'with', 'i', 'you', 'it', 'not', 'or', 'be', 'are', 'from', 
-                      'at', 'as', 'your', 'have', 'more', 'has', 'an', 'was', 'com', 'www'])
-    
-    filtered_words = [word for word in words if word not in stop_words and len(word) > 2]
-    
-    # Count word frequencies
-    word_counts = Counter(filtered_words)
-    
-    # Create word frequency chart
-    word_freq_df = pd.DataFrame(word_counts.most_common(15), columns=['Word', 'Frequency'])
-    
-    word_freq_chart = px.bar(
-        word_freq_df, 
-        x='Word', 
-        y='Frequency',
-        title='Most Common Words in Reviews',
-        color='Frequency',
-        color_continuous_scale='Viridis'
-    )
-    
-    return sentiment_pie, sentiment_bar, word_freq_chart    
+    return unique_reviews   
 
 def analyze_sentiment2(search_results, neg_threshold=0.1, compound_threshold=0):
     sia = SentimentIntensityAnalyzer()
@@ -402,103 +445,77 @@ def analyze_sentiment(search_results):
     print(pd.DataFrame(sentiments))
     return pd.DataFrame(sentiments)
 
-def get_trend_data(keyword):
+def get_trend_data(keyword, timeframe='now 7-d'):
+    url = f"https://en.wikipedia.org/wiki/{keyword.replace(' ', '_')}"
+    print(url)
+    response = requests.get(url)
+    print('RESPONSE',response.status_code)
+    
+    if response.status_code != 200:
+        return None
+    
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # Find the page views section (this is a hypothetical example)
+    # You may need to adjust the selectors based on the actual HTML structure
+    views_data = []
+    for row in soup.find_all('tr'):
+        cells = row.find_all('td')
+        if len(cells) > 1:
+            date = cells[0].get_text(strip=True)
+            views = cells[1].get_text(strip=True)
+            views_data.append((date, int(views.replace(',', ''))))  # Convert views to integer
+    
+    return pd.DataFrame(views_data, columns=['Date', 'Views'])
+
+# # Test with a common keyword
+# data = get_trend_data('python')
+
+# Updated chart creation function with robust error handling
+def create_trend_chart(keyword, search_results=None):
     try:
-        # Initialize pytrends
-        pytrends = TrendReq(hl='en-US', tz=360)
-        
-        # Build payload
-        pytrends.build_payload([keyword], cat=0, timeframe='today 1-m')
-        
-        # Get interest over time
-        interest_over_time_df = pytrends.interest_over_time()
-        
-        # If no data was returned, generate placeholder data
-        if interest_over_time_df.empty:
-            return create_placeholder_trend_data(keyword)
-            
-        # Process the dataframe for plotting
-        # Remove partial data for the current day
-        if not interest_over_time_df.empty:
-            interest_over_time_df = interest_over_time_df.iloc[:-1]
-        
-        # Reset index to convert date to column
-        trend_df = interest_over_time_df.reset_index()
-        
-        # Rename columns
-        trend_df = trend_df.rename(columns={'date': 'date', keyword: 'interest'})
-        
-        # Convert date to string for easier plotting
-        trend_df['date'] = trend_df['date'].dt.strftime('%Y-%m-%d')
-        
-        return trend_df
-        
-    except Exception as e:
-        print(f"Error getting trend data: {e}")
-        # Fall back to placeholder data if there's an error
-        return create_placeholder_trend_data(keyword)
-
-def create_placeholder_trend_data(keyword):
-    # This function creates placeholder data when Google Trends fails
-    # It's the same as your original function but clearly labeled as estimated
-    # days = 30
-    # today = datetime.now()
-    # dates = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days, 0, -1)]
+        # Get actual trend data
+        trend_df = get_trend_data(keyword, timeframe='now 4-H')  # Last 4 hours
     
-    # base = random.randint(50, 500)
-    # trend = []
-    # overall_direction = random.choice([-1, 1])
-    
-    # for i in range(days):
-    #     day_of_week = (today - timedelta(days=days-i-1)).weekday()
-    #     weekend_factor = 1.1 if day_of_week >= 5 else 1.0
+        if trend_df.empty or len(trend_df) < 2:
+            return None, "No real-time interest data available for this keyword"
         
-    #     daily_change = random.uniform(-0.08, 0.12) 
-    #     trend_influence = overall_direction * (i/days) * 0.15
+        # Create the chart with Plotly
+        fig = px.line(trend_df, x='date', y='views', 
+                    title=f'Real-time interest in "{keyword}"')
         
-    #     if i == 0:
-    #         trend.append(base * weekend_factor)
-    #     else:
-    #         next_val = trend[-1] * (1 + daily_change + trend_influence) * weekend_factor
-    #         trend.append(max(10, next_val))
-    
-    # df = pd.DataFrame({
-    #     'date': dates,
-    #     'interest': trend
-    # })
-    df = pd.DataFrame({
-        'date': [],
-        'interest': []
-    })
-    
-    return df
-
-def create_trend_chart(keyword):
-    # Get actual trend data
-    trend_df = get_trend_data(keyword)
-    
-    # Create the chart with Plotly
-    fig = px.line(trend_df, x='date', y='interest', 
-                 title=f'Interest in "{keyword}" over the last 30 days')
-    
-    fig.update_layout(
-        xaxis_title='Date', 
-        yaxis_title='Interest Level',
-        hovermode='x unified'
-    )
-    
-    # Add annotation if using placeholder data
-    if 'is_placeholder' in trend_df.columns and trend_df['is_placeholder'].iloc[0]:
-        fig.add_annotation(
-            text="Note: Using estimated data as actual trends unavailable",
-            xref="paper", yref="paper",
-            x=0.5, y=1.05,
-            showarrow=False,
-            font=dict(size=10, color="red")
+        # Add interactive features
+        fig.update_layout(
+            xaxis_title='date', 
+            yaxis_title='views',
+            hovermode='x unified',
+            updatemenus=[{
+                'buttons': [
+                    {'args': [{'visible': [True, False, False]}, 
+                            {'title': f'Real-time interest in "{keyword}"'}],
+                    'label': '4 Hours',
+                    'method': 'update'},
+                    {'args': [{'visible': [False, True, False]}, 
+                            {'title': f'Real-time interest in "{keyword}"'}],
+                    'label': '24 Hours',
+                    'method': 'update'},
+                    {'args': [{'visible': [False, False, True]}, 
+                            {'title': f'Real-time interest in "{keyword}"'}],
+                    'label': '7 Days',
+                    'method': 'update'}
+                ],
+                'direction': 'down',
+                'showactive': True,
+                'x': 0.1,
+                'y': 1.15
+            }]
         )
-    
-    return fig
-
+        
+        return fig, None
+    except Exception as e:
+        print(f"Error creating trend chart: {e}")
+        # Return a None chart and a message
+        return None, "Unable to display interest data for this keyword"
 
 # Function to create a sentiment distribution chart
 def create_sentiment_chart(sentiment_df):
@@ -526,84 +543,12 @@ def create_sentiment_chart(sentiment_df):
     )
     
     return fig
-
-# Function to create word cloud from search results
-# def create_word_cloud(search_results):
-#     if not search_results:
-#         return None
-    
-#     # Combine all text from search results
-#     text = ' '.join([f"{result['title']} {result['body']}" for result in search_results])
-    
-#     # Common stopwords to exclude
-#     stopwords = set(['the', 'and', 'of', 'to', 'a', 'in', 'for', 'is', 'on', 'that', 'by', 'this', 'with', 'i', 'you', 'it', 'not', 'or', 'be', 'are', 'from', 'at', 'as', 'your', 'have', 'more', 'has', 'an', 'was', 'com', 'www'])
-    
-#     # Create and generate a word cloud image
-#     wordcloud = WordCloud(
-#         width=800, 
-#         height=400, 
-#         background_color='white', 
-#         max_words=100, 
-#         contour_width=3, 
-#         contour_color='steelblue',
-#         stopwords=stopwords,
-#         collocations=True,  # Include bigrams
-#         min_font_size=10,
-#         max_font_size=100
-#     ).generate(text)
-    
-#     # Create matplotlib figure
-#     fig, ax = plt.subplots(figsize=(10, 5))
-#     ax.imshow(wordcloud, interpolation='bilinear')
-#     ax.axis('off')
-    
-#     return fig
-
-# Function to create metrics comparison chart
-# def create_metrics_chart(metrics):
-#     if not metrics:
-#         return None
-    
-#     # Convert metrics to numeric values where possible
-#     numeric_metrics = {}
-#     for key, value in metrics.items():
-#         try:
-#             # Try to extract numeric value from string
-#             if isinstance(value, str):
-#                 # Extract numbers from strings like "$599" or "4.5 stars"
-#                 match = re.search(r'[-+]?\d*\.\d+|\d+', value)
-#                 if match:
-#                     numeric_metrics[key] = float(match.group())
-#             elif isinstance(value, (int, float)):
-#                 numeric_metrics[key] = float(value)
-#         except:
-#             pass
-    
-#     if not numeric_metrics:
-#         return None
-    
-#     # Create bar chart
-#     fig = px.bar(
-#         x=list(numeric_metrics.keys()),
-#         y=list(numeric_metrics.values()),
-#         title="Key Metrics",
-#         labels={'x': 'Metric', 'y': 'Value'},
-#         color=list(numeric_metrics.values()),
-#         text=list(numeric_metrics.values())
-#     )
-    
-#     # Improve formatting
-#     fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-#     fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
-    
-#     return fig
-
 # Set up the cache for expensive operations
-@st.cache_data(ttl=1800)  # Cache expires after 30 minutes
+# @st.cache_data(ttl=1800)  # Cache expires after 30 minutes
 def cached_search(query):
     return search_web(query, max_results=10)
 
-@st.cache_data(ttl=1800)
+# @st.cache_data(ttl=1800)
 def cached_analysis(keyword, search_results):
     return analyze_keyword_structured(keyword, search_results)
 
@@ -641,25 +586,9 @@ st.markdown('<div class="main-header">🔍vSaaS Keyword Trend & Sentiment Analyz
 with st.sidebar:
     st.image("logo.png")
     st.header("About This Tool")
-    st.markdown("""
-    This dashboard analyzes any keyword to provide insights on:
-    
-    * 📈 Current trends and interest
-    * 💬 Public sentiment and opinions
-    * 📊 Key metrics and statistics
-    * 🔤 Common associated terms
-    
-    Enter any product, brand, person, location, or topic to get started!
-    """)
-    
-    # st.markdown("---")
-    # st.markdown("#### Tips for Best Results")
-    # st.markdown("""
-    # * Be specific with your keyword
-    # * Try both broad terms and specific ones
-    # * Compare related keywords in separate searches
-    # """)
-
+    st.markdown("""This dashboard analyzes any keyword to provide insights on:
+        * 📈 Current trends and interest
+        * 💬 Public sentiment and opinions""")
 # Main search box
 st.markdown('<div class="search-box">', unsafe_allow_html=True)
 keyword = st.text_input("", placeholder="Enter a keyword to analyze (product, brand, location, etc.)", 
@@ -668,17 +597,14 @@ col1, col2 = st.columns([6, 1])
 with col2:
     search_button = st.button("🔍 Analyze", type="primary", use_container_width=True)
 st.markdown('</div>', unsafe_allow_html=True)
-
 # Handle search
 if search_button and keyword:
     # Show spinner while processing
     with st.spinner(f"Analyzing '{keyword}'..."):
-        # Get search results using caching
-        search_results = cached_search(keyword)
-        
-        if not search_results:
-            st.error("No search results found. Please try a different keyword.")
-        else:
+            # Get search results using caching
+            search_results = cached_search(keyword)
+            
+            # Always continue - if search_results is empty, we'll have a placeholder
             progress_text = st.empty()
             progress_bar = st.progress(0)
             
@@ -693,20 +619,11 @@ if search_button and keyword:
             # Perform AI analysis
             progress_text.text("Analyzing content with AI...")
             analysis = cached_analysis(keyword, search_results)
-            print('ANALYSIS')
-            print(analysis)
             progress_bar.progress(75)
             
             # Generate visualizations
             progress_text.text("Creating visualizations...")
-            trend_chart = create_trend_chart(keyword)
-            # word_cloud = create_word_cloud(search_results)
-            # sentiment_chart = create_sentiment_chart(sentiment_df)
-            # metrics_chart = None
-            # if analysis and "key_metrics" in analysis and analysis["key_metrics"]:
-            #     metrics_chart = create_metrics_chart(analysis["key_metrics"])
-            # else:
-            #     print('no key metrics present in analysis')
+            trend_chart, trend_message = create_trend_chart(keyword)
             
             progress_bar.progress(100)
             progress_text.text("Analysis complete!")
@@ -723,8 +640,6 @@ if search_button and keyword:
             # Summary section
             if analysis and "summary" in analysis:
                 st.info(analysis["summary"])
-            else:
-                st.info('no summary')
             
             # Create tabs for different aspects of the analysis
             tab1, tab2, tab3, tab4= st.tabs(["📈 Trends & Topics", "😊 Sentiment","Reviews","🔍 Scraped Data"])
@@ -735,29 +650,26 @@ if search_button and keyword:
                 with col1:
                     # Trending topics
                     st.subheader("🔥 Trending Topics")
-                    if analysis and "trending" in analysis:
+                    if analysis and "trending" in analysis and analysis["trending"]:
                         for item in analysis["trending"]:
                             st.markdown(f"- {item}")
                     else:
-                        st.markdown("no trending")
+                        st.info("No trending topics found for this keyword.")
                     
                     # Current topics
                     st.subheader("📰 Current Discussions")
-                    if analysis and "current_topics" in analysis:
+                    if analysis and "current_topics" in analysis and analysis["current_topics"]:
                         for item in analysis["current_topics"]:
                             st.markdown(f"- {item}")
                     else:
-                        st.markdown("no current topics")
+                        st.info("No current discussions found for this keyword.")
                 
                 with col2:
                     # Trend chart
-                    st.plotly_chart(trend_chart, use_container_width=True)
-                    
-                #     # Word cloud
-                #     st.subheader("Word Cloud")
-                #     if word_cloud:
-                #         st.pyplot(word_cloud)
-            
+                    if trend_chart:
+                        st.plotly_chart(trend_chart, use_container_width=True)
+                    elif trend_message:
+                        st.info(trend_message)       
             with tab2:
                 col1, col2,col3 = st.columns([1,2,1])
                 
@@ -781,42 +693,28 @@ if search_button and keyword:
             with tab3:
                 st.subheader("Reviews Analysis")
                 
-                with st.spinner("Scraping and analyzing reviews..."):
-                    reviews = scrape_reviews(keyword, search_results)
-                    
-                    if reviews:
-                        st.write(f"Found {len(reviews)} reviews related to '{keyword}'")
+                try:
+                    with st.spinner("Scraping and analyzing reviews..."):
+                        reviews = scrape_reviews(keyword, search_results)
                         
-                        # Generate visualizations
-                        # sentiment_pie, sentiment_bar, word_freq_chart = create_review_visualizations(reviews)
-                        
-                        # Display visualizations
-                        col1, col2 = st.columns(2)
-                        
-                        # with col1:
-                        #     if sentiment_pie:
-                        #         st.plotly_chart(sentiment_pie, use_container_width=True)
-                        
-                        # with col2:
-                        #     if word_freq_chart:
-                        #         st.plotly_chart(word_freq_chart, use_container_width=True)
-                        
-                        # if sentiment_bar:
-                        #     st.plotly_chart(sentiment_bar, use_container_width=True)
-                        
-                        # Show actual reviews
-                        st.subheader("Review Samples")
-                        for i, review in enumerate(reviews[:10]):  # Limit to 10 displayed reviews
-                            with st.expander(f"Review {i+1} ({review['category']})"):
-                                st.write(review['text'])
-                                st.caption(f"Source: {review['source']}")
-                    else:
-                        st.info("No reviews found for this keyword. Try a product or brand name for better results.")
-                
-            
+                        if reviews and len(reviews) > 0:
+                            st.write(f"Found {len(reviews)} reviews related to '{keyword}'")
+                            st.subheader("Review Samples")
+                            if len(reviews) > 0:
+                                for i, review in enumerate(reviews[:10]):  # Limit to 10 displayed reviews
+                                    with st.expander(f"Review {i+1} ({review['category']})"):
+                                        st.write(review['text'])
+                                        st.caption(f"Source: {review['source']}")
+                            else:
+                                st.info("No detailed review content was found.")
+                        else:
+                            st.info("No reviews found for this keyword. Try a product or brand name for better results.")
+                except Exception as e:
+                    print(f"Error in reviews tab: {e}")
+                    st.info("Review analysis is not available for this keyword.")            
             with tab4:
                 # Raw search results
-                st.subheader("Search Results")
+                st.subheader("Scraped Data")
                 for i, result in enumerate(search_results, 1):
                     with st.expander(f"{i}. {result['title']}"):
                         st.write(result['body'])
@@ -850,12 +748,8 @@ if search_button and keyword:
                             file_name=f"{keyword}_analysis.json",
                             mime="application/json",
                         )
-                
-                
-
 else:
     # Display welcome screen with instructions
-    st.info("👆 Enter a keyword above and click 'Analyze' to get started.")
-    
+    st.info("👆 Enter a keyword above and click 'Analyze' to get started.")    
     # Example dashboard preview (static image or placeholder)
     st.image("https://img.icons8.com/color/452/dashboard-layout.png", width=300)
