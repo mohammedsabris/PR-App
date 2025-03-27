@@ -14,10 +14,11 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from pytrends.request import TrendReq
 from bs4 import BeautifulSoup
-import re
+import re,os
 from collections import Counter
 from textblob import TextBlob
-
+from dotenv import load_dotenv
+load_dotenv()
 # Download NLTK resources (first-time only)
 try:
     nltk.data.find('vader_lexicon')
@@ -26,7 +27,7 @@ except LookupError:
     nltk.download('punkt')
 
 # Set your OpenRouter API Key (don't prompt user)
-OPENROUTER_API_KEY = "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"  # Replace with environment variable in production
+OPENROUTER_API_KEY = os.environ['API_KEY']  # Replace with environment variable in production
 
 # Add this to your imports
 from serpapi import GoogleSearch
