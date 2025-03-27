@@ -30,7 +30,7 @@ except LookupError:
 OPENROUTER_API_KEY = os.environ['API_KEY']  # Replace with environment variable in production
 
 # Add this to your imports
-from serpapi import GoogleSearch
+# from serpapi import GoogleSearch
 import time
 
 def search_web(query, max_results=200):
