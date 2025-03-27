@@ -180,7 +180,7 @@ def analyze_keyword_structured(keyword, search_results):
     """
     
     payload = {
-        "model": "mistralai/mistral-small-3.1-24b-instruct:free",
+        "model": "deepseek/deepseek-chat-v3-0324:free",
         "messages": [
             {"role": "system", "content": "You are an expert analyst who provides structured JSON outputs. Return ONLY valid JSON without any markdown formatting, code blocks, or explanations."},
             {"role": "user", "content": prompt}
