@@ -143,7 +143,7 @@ def analyze_keyword_structured(keyword, search_results):
     
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {st.secrets("OPENROUTER_API_KEY"}",
+        "Authorization": f"Bearer {st.secrets("OPENROUTER_API_KEY")}",
         "Content-Type": "application/json"
     }
     
