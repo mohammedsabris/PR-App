@@ -19,6 +19,9 @@ from collections import Counter
 from textblob import TextBlob
 from dotenv import load_dotenv
 load_dotenv()
+import logging
+logging.basicConfig(level=logging.DEBUG,  # Set the logging level
+                    format='%(asctime)s - %(levelname)s - %(message)s')  # Set the format of the log messages
 # Download NLTK resources (first-time only)
 try:
     nltk.data.find('vader_lexicon')
@@ -46,21 +49,22 @@ def search_web(query, max_results=200):
                         "href": r.get("href", "")
                     })
             except Exception as e:
-                print(f"Error during DDGS search: {e}")
+                logging.debug(f"Error during DDGS search: {e}")
+
                 # Continue with fallback if DDGS fails
         
         # If DDGS returned results, use them
         if results:
-            print(f'RESULTS FROM PRIMARY ENGINE (DDGS): {len(results)} found')
+            logging.debug(f'RESULTS FROM PRIMARY ENGINE (DDGS): {len(results)} found')
             return results
         
         # If DDGS returned no results, try fallback
-        print('DDGS RETURNED NO RESULTS, TRYING FALLBACK')
+        logging.debug('DDGS RETURNED NO RESULTS, TRYING FALLBACK')
         return fallback_search(query, max_results)
         
     except Exception as e:
-        print(f"Primary search error: {e}")
-        print('TRYING FALLBACK SEARCH ENGINE')
+        logging.debug(f"Primary search error: {e}")
+        logging.debug('TRYING FALLBACK SEARCH ENGINE')
         return fallback_search(query, max_results)
 
 # Improved fallback search
@@ -113,23 +117,23 @@ def fallback_search(query, max_results=200):
                     if len(results) > 10:
                         break
             except Exception as e:
-                print(f"Error with search engine {search_url}: {e}")
+                logging.debug(f"Error with search engine {search_url}: {e}")
                 continue
         
         # If all search engines failed, return a helpful placeholder result
         if not results:
-            print("All search engines failed, returning placeholder result")
+            logging.debug("All search engines failed, returning placeholder result")
             return [{
                 "title": f"Information about {query}",
                 "body": f"We're collecting information about {query}. Try refining your search or check back in a moment.",
                 "href": "https://www.example.com"
             }]
         
-        print(f'RESULTS FROM FALLBACK ENGINE: {len(results)} found')
+        logging.debug(f'RESULTS FROM FALLBACK ENGINE: {len(results)} found')
         return results
         
     except Exception as e:
-        print(f"All fallback search methods failed: {e}")
+        logging.debug(f"All fallback search methods failed: {e}")
         # Return a minimal placeholder to avoid breaking the application
         return [{
             "title": f"Information about {query}",
@@ -197,13 +201,13 @@ def analyze_keyword_structured(keyword, search_results):
     
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
-        print('STATUS CODE', response.status_code)
+        logging.debug('STATUS CODE', response.status_code)
         
         if response.status_code == 200:
             try:
                 # First try the proper API response format
                 content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "{}")
-                print('RAW CONTENT:', content[:500])
+                logging.debug('RAW CONTENT:', content[:500])
                 
                 # Try multiple approaches to parse the JSON
                 try:
@@ -215,7 +219,7 @@ def analyze_keyword_structured(keyword, search_results):
                         return result
                     else:
                         # Missing expected fields, fall back to default
-                        print("Response missing expected fields, using default")
+                        logging.debug("Response missing expected fields, using default")
                         return default_response
                         
                 except json.JSONDecodeError:
@@ -286,20 +290,20 @@ def analyze_keyword_structured(keyword, search_results):
                             
                             return manual_result
                         except Exception as e:
-                            print(f"Manual parsing failed: {e}")
+                            logging.debug(f"Manual parsing failed: {e}")
                             return default_response
                     
                 # If we get here, all parsing methods failed
-                print("All JSON parsing methods failed, using default response")
+                logging.debug("All JSON parsing methods failed, using default response")
                 return default_response
             except Exception as e:
-                print(f"Response processing error: {e}")
+                logging.debug(f"Response processing error: {e}")
                 return default_response
         else:
-            print(f"API Error: {response.status_code}")
+            logging.debug(f"API Error: {response.status_code}")
             return default_response
     except Exception as e:
-        print(f"Analysis request error: {e}")
+        logging.debug(f"Analysis request error: {e}")
         return default_response
     
 def scrape_reviews(keyword, search_results, max_reviews=20):
@@ -352,7 +356,7 @@ def scrape_reviews(keyword, search_results, max_reviews=20):
                             break
         
         except Exception as e:
-            print(f"Error scraping reviews from {page['href']}: {e}")
+            logging.debug(f"Error scraping reviews from {page['href']}: {e}")
     
     # If we still need more reviews, use the search results content as fallback
     if len(all_reviews) < max_reviews:
@@ -423,8 +427,8 @@ def analyze_sentiment2(search_results, neg_threshold=0.1, compound_threshold=0):
         })
     
     df = pd.DataFrame(sentiments)
-    print('SENTIMENT ANALYSIS RESULTS:')
-    print(df)
+    logging.debug('SENTIMENT ANALYSIS RESULTS:')
+    logging.debug(df)
     return df
 
 # Function to perform local sentiment analysis on search results
@@ -442,15 +446,15 @@ def analyze_sentiment(search_results):
             "negative": sentiment['neg'],
             "neutral": sentiment['neu']
         })
-    print('COLLECTING IT AS PANDAS DATAFRAMES')
-    print(pd.DataFrame(sentiments))
+    logging.debug('COLLECTING IT AS PANDAS DATAFRAMES')
+    logging.debug(pd.DataFrame(sentiments))
     return pd.DataFrame(sentiments)
 
 def get_trend_data(keyword, timeframe='now 7-d'):
     url = f"https://en.wikipedia.org/wiki/{keyword.replace(' ', '_')}"
-    print(url)
+    logging.debug(url)
     response = requests.get(url)
-    print('RESPONSE',response.status_code)
+    logging.debug('RESPONSE',response.status_code)
     
     if response.status_code != 200:
         return None
@@ -514,7 +518,7 @@ def create_trend_chart(keyword, search_results=None):
         
         return fig, None
     except Exception as e:
-        print(f"Error creating trend chart: {e}")
+        logging.debug(f"Error creating trend chart: {e}")
         # Return a None chart and a message
         return None, "Unable to display interest data for this keyword"
 
@@ -711,7 +715,7 @@ if search_button and keyword:
                         else:
                             st.info("No reviews found for this keyword. Try a product or brand name for better results.")
                 except Exception as e:
-                    print(f"Error in reviews tab: {e}")
+                    logging.debug(f"Error in reviews tab: {e}")
                     st.info("Review analysis is not available for this keyword.")            
             with tab4:
                 # Raw search results
