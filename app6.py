@@ -26,7 +26,7 @@ except LookupError:
     nltk.download('punkt')
 
 # Set your OpenRouter API Key (don't prompt user)
-OPENROUTER_API_KEY = st.secrets('OPENROUTER_API_KEY')  
+#OPENROUTER_API_KEY = st.secrets('OPENROUTER_API_KEY')  
 
 # Add this to your imports
 from serpapi import GoogleSearch
@@ -143,7 +143,7 @@ def analyze_keyword_structured(keyword, search_results):
     
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {st.secrets("OPENROUTER_API_KEY"}",
         "Content-Type": "application/json"
     }
     
